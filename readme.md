@@ -27,10 +27,10 @@ Aplikasi ini merupakan **platform digital terpadu** yang dirancang untuk membant
 ---
 
 ## 🛠️ Tech Stack
-- **Frontend:** Vue.js / Nuxt.js / TailwindCSS  
-- **Backend:** Golang Fiber / Node.js / Laravel  
-- **Database:** PostgreSQL / MySQL  
-- **Deployment:** Docker / Kubernetes / Cloud-based (AWS/GCP)  
+- **Frontend:** Android Native, TailwindCSS  
+- **Backend:** Laravel  
+- **Database:** MySQL  
+- **Deployment:** Docker  
 
 *(Tech stack dapat disesuaikan sesuai kebutuhan implementasi)*  
 
