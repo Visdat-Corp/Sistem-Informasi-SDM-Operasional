@@ -12,10 +12,10 @@
     <!-- Sidebar Utama -->
     <div id="mainSidebar" class="w-60 bg-blue-800 text-white flex flex-col overflow-hidden">
         <!-- Logo Section -->
-        <div class="bg-red-600 py-4 px-4 flex justify-between items-center">
+        <div class="bg-red-600 px-2 flex justify-between items-center" style="padding-top: 4px; padding-bottom: 4px;">
             
             <div class="logo">
-                <img src="/image/logo.jpeg" alt="Logo" class="h-12 w-32 object-contain rounded-lg">
+                <img src="/image/logo.jpeg" alt="Logo" class="h-16 w-40 object-contain rounded-lg">
             </div>
             
         </div>
@@ -86,16 +86,18 @@
     </div>
 
     <!-- Main Content -->
-    <main class="flex-1 bg-gray-50 p-6 flex flex-col items-center">
-        <!-- Header -->
-        <header class="flex items-center space-x-3 mb-8 w-full max-w-5xl">
+    <main class="flex-1 bg-gray-50 p-6 flex flex-col items-start">
+       <!-- Header -->
+    <header class="flex items-center justify-between mb-8 border-b border-gray-200 pb-4">
+        <div class="flex items-center space-x-3">
             <svg class="w-6 h-6 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke-width="2"/>
+                <path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" stroke-width="2"/>
             </svg>
             <h1 class="font-bold text-2xl text-gray-900">Data Absensi</h1>
-        </header>
+        </div>
+    </header>
         <!-- end of Header -->
-        <div class="flex items-center justify-between w-full max-w-5xl mb-4">
+        <div class="flex items-center justify-between w-full mb-4">
             <!-- Label -->
             <h2 class="font-semibold text-black">Team Member</h2>
             <!-- Input Tanggal + Button -->
@@ -112,7 +114,7 @@
             </div>
         </div>
         <!-- Table -->
-        <div class="overflow-x-auto w-full max-w-5xl rounded-lg shadow bg-white">
+        <div class="overflow-x-auto w-full rounded-lg shadow bg-white">
             <table class="min-w-full bg-white border border-gray-200 rounded-lg overflow-hidden">
                 <thead>
                     <tr class="bg-gray-100">

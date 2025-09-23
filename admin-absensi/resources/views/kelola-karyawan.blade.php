@@ -10,10 +10,10 @@
     <!-- Sidebar Utama -->
     <div id="mainSidebar" class="w-60 bg-blue-800 text-white flex flex-col overflow-hidden">
         <!-- Logo Section -->
-        <div class="bg-red-600 py-4 px-4 flex justify-between items-center">
+        <div class="bg-red-600 px-2 flex justify-between items-center" style="padding-top: 4px; padding-bottom: 4px;">
             
             <div class="logo">
-                <img src="/image/logo.jpeg" alt="Logo" class="h-12 w-32 object-contain rounded-lg">
+                <img src="/image/logo.jpeg" alt="Logo" class="h-16 w-40 object-contain rounded-lg">
             </div>
             
         </div>
@@ -129,6 +129,7 @@
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Id</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jabatan</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
@@ -138,6 +139,7 @@
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
                     <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">1</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">John Doe</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Software Engineer</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">john@example.com</td>
@@ -158,6 +160,7 @@
                         </td>
                     </tr>
                     <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">2</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Jane Smith</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">UI/UX Designer</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">jane@example.com</td>
@@ -178,6 +181,7 @@
                         </td>
                     </tr>
                     <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">3</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Mike Johnson</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Project Manager</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">mike@example.com</td>
