@@ -13,6 +13,8 @@ use App\Models\Absensi;
 use App\Models\JamKerja;
 use App\Models\LokasiKerja;
 use App\Exports\LaporanAbsensiExport;
+use App\Exports\LaporanAbsensiHarianExport;
+use App\Exports\LaporanAbsensiMingguanExport;
 use App\Exports\LaporanLemburExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Carbon\Carbon;
@@ -584,12 +586,26 @@ class AdminController extends Controller
     public function indexLaporan(Request $request)
     {
         // Get filters
+        $type = $request->get('type', 'bulanan');
         $bulan = $request->get('bulan', Carbon::now()->month);
         $tahun = $request->get('tahun', Carbon::now()->year);
+        $minggu = $request->get('minggu', Carbon::now()->format('Y-\WW'));
+        $tanggal = $request->get('tanggal', Carbon::today()->toDateString());
         $search = $request->get('search');
 
-        $startDate = Carbon::createFromDate($tahun, $bulan, 1)->startOfMonth();
-        $endDate = Carbon::createFromDate($tahun, $bulan, 1)->endOfMonth();
+        if ($type == 'harian') {
+            $startDate = Carbon::parse($tanggal);
+            $endDate = Carbon::parse($tanggal);
+        } elseif ($type == 'mingguan') {
+            // minggu is in format YYYY-Www
+            list($year, $week) = explode('-W', $minggu);
+            $startDate = Carbon::createFromDate($year, 1, 1)->setISODate($year, $week)->startOfWeek();
+            $endDate = Carbon::createFromDate($year, 1, 1)->setISODate($year, $week)->endOfWeek();
+        } else { // bulanan
+            $startDate = Carbon::createFromDate($tahun, $bulan, 1)->startOfMonth();
+            $endDate = Carbon::createFromDate($tahun, $bulan, 1)->endOfMonth();
+        }
+
         $today = Carbon::today();
         if ($endDate->gt($today)) {
             $endDate = $today;
@@ -747,16 +763,25 @@ class AdminController extends Controller
             ];
         }
 
-        return view('laporan', compact('stats', 'processedAbsensis', 'absensis', 'bulan', 'tahun', 'search', 'sortBy', 'sortDirection', 'chartData', 'processedOvertime', 'overtimeAbsensis'));
+        return view('laporan', compact('stats', 'processedAbsensis', 'absensis', 'type', 'bulan', 'tahun', 'minggu', 'tanggal', 'search', 'sortBy', 'sortDirection', 'chartData', 'processedOvertime', 'overtimeAbsensis'));
     }
 
     public function exportLaporan(Request $request)
     {
+        $type = $request->get('type', 'bulanan');
         $bulan = $request->get('bulan', Carbon::now()->month);
         $tahun = $request->get('tahun', Carbon::now()->year);
+        $minggu = $request->get('minggu', Carbon::now()->format('Y-\WW'));
+        $tanggal = $request->get('tanggal', Carbon::today()->toDateString());
         $search = $request->get('search');
 
-        return Excel::download(new LaporanAbsensiExport($bulan, $tahun, $search), 'laporan_absensi_' . $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT) . '.xlsx');
+        if ($type == 'harian') {
+            return Excel::download(new LaporanAbsensiHarianExport($tanggal, $search), 'laporan_absensi_harian_' . $tanggal . '.xlsx');
+        } elseif ($type == 'mingguan') {
+            return Excel::download(new LaporanAbsensiMingguanExport($minggu, $search), 'laporan_absensi_mingguan_' . $minggu . '.xlsx');
+        } else {
+            return Excel::download(new LaporanAbsensiExport($bulan, $tahun, $search), 'laporan_absensi_bulanan_' . $tahun . '-' . str_pad($bulan, 2, '0', STR_PAD_LEFT) . '.xlsx');
+        }
     }
 
     public function exportLaporanLembur(Request $request)

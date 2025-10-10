@@ -17,7 +17,7 @@
 
     <!-- Main Content -->
     <main class="flex-1 bg-white p-6">
-        @include('partials.header', ['title' => 'Laporan', 'description' => 'Laporan Absensi Harian karyawan'])
+        @include('partials.header', ['title' => 'Laporan', 'description' => 'Laporan Absensi Karyawan'])
         <!-- end of Header -->
 
         <!-- Laporan Absensi Section -->
@@ -30,20 +30,42 @@
                     <h3 class="text-sm font-medium mb-3">Filter Laporan</h3>
                     <form class="space-y-4" method="GET" action="{{ route('laporan') }}">
                         <div>
-                            <label for="bulan" class="block text-sm text-gray-700 mb-1">Bulan</label>
-                            <select id="bulan" name="bulan" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                @for($i = 1; $i <= 12; $i++)
-                                    <option value="{{ $i }}" {{ $bulan == $i ? 'selected' : '' }}>{{ \Carbon\Carbon::createFromFormat('m', $i)->format('F') }}</option>
-                                @endfor
+                            <label for="type" class="block text-sm text-gray-700 mb-1">Tipe Laporan</label>
+                            <select id="type" name="type" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="bulanan" {{ $type == 'bulanan' ? 'selected' : '' }}>Bulanan</option>
+                                <option value="mingguan" {{ $type == 'mingguan' ? 'selected' : '' }}>Mingguan</option>
+                                <option value="harian" {{ $type == 'harian' ? 'selected' : '' }}>Harian</option>
                             </select>
                         </div>
-                        <div>
-                            <label for="tahun" class="block text-sm text-gray-700 mb-1">Tahun</label>
-                            <select id="tahun" name="tahun" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                @for($y = date('Y') - 1; $y <= date('Y') + 1; $y++)
-                                    <option value="{{ $y }}" {{ $tahun == $y ? 'selected' : '' }}>{{ $y }}</option>
-                                @endfor
-                            </select>
+                        <div id="bulanan-fields" class="space-y-4" style="{{ $type == 'bulanan' || !$type ? '' : 'display: none;' }}">
+                            <div>
+                                <label for="bulan" class="block text-sm text-gray-700 mb-1">Bulan</label>
+                                <select id="bulan" name="bulan" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    @for($i = 1; $i <= 12; $i++)
+                                        <option value="{{ $i }}" {{ $bulan == $i ? 'selected' : '' }}>{{ \Carbon\Carbon::createFromFormat('m', $i)->format('F') }}</option>
+                                    @endfor
+                                </select>
+                            </div>
+                            <div>
+                                <label for="tahun" class="block text-sm text-gray-700 mb-1">Tahun</label>
+                                <select id="tahun" name="tahun" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    @for($y = date('Y') - 1; $y <= date('Y') + 1; $y++)
+                                        <option value="{{ $y }}" {{ $tahun == $y ? 'selected' : '' }}>{{ $y }}</option>
+                                    @endfor
+                                </select>
+                            </div>
+                        </div>
+                        <div id="mingguan-fields" class="space-y-4" style="{{ $type == 'mingguan' ? '' : 'display: none;' }}">
+                            <div>
+                                <label for="minggu" class="block text-sm text-gray-700 mb-1">Minggu</label>
+                                <input type="week" id="minggu" name="minggu" value="{{ $minggu ?? \Carbon\Carbon::now()->format('Y-\WW') }}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                        </div>
+                        <div id="harian-fields" class="space-y-4" style="{{ $type == 'harian' ? '' : 'display: none;' }}">
+                            <div>
+                                <label for="tanggal" class="block text-sm text-gray-700 mb-1">Tanggal</label>
+                                <input type="date" id="tanggal" name="tanggal" value="{{ $tanggal ?? \Carbon\Carbon::today()->toDateString() }}" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
                         </div>
                         <div>
                             <label for="search" class="block text-sm text-gray-700 mb-1">Cari Nama Karyawan</label>
@@ -80,7 +102,7 @@
         <div class="bg-white rounded-lg shadow p-6 mt-6">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-semibold">Detail Laporan Kehadiran</h2>
-                <a href="{{ route('laporan.export', ['bulan' => $bulan, 'tahun' => $tahun, 'search' => $search]) }}" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 transition-colors">
+                <a href="{{ route('laporan.export', ['type' => $type, 'bulan' => $bulan, 'tahun' => $tahun, 'minggu' => $minggu, 'tanggal' => $tanggal, 'search' => $search]) }}" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700 transition-colors">
                     <svg class="w-4 h-4 mr-2 inline" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/>
                     </svg>
@@ -246,8 +268,11 @@
 
         <!-- Export Form for Overtime -->
         <form id="exportLemburForm" method="GET" action="{{ route('laporan.export-lembur') }}" style="display: none;">
+            <input type="hidden" name="type" value="{{ $type }}">
             <input type="hidden" name="bulan" value="{{ $bulan }}">
             <input type="hidden" name="tahun" value="{{ $tahun }}">
+            <input type="hidden" name="minggu" value="{{ $minggu }}">
+            <input type="hidden" name="tanggal" value="{{ $tanggal }}">
             <input type="hidden" name="search" value="{{ $search }}">
         </form>
 
@@ -297,6 +322,13 @@
         function exportLaporanLembur() {
             document.getElementById('exportLemburForm').submit();
         }
+
+        document.getElementById('type').addEventListener('change', function() {
+            const type = this.value;
+            document.getElementById('bulanan-fields').style.display = type === 'bulanan' ? '' : 'none';
+            document.getElementById('mingguan-fields').style.display = type === 'mingguan' ? '' : 'none';
+            document.getElementById('harian-fields').style.display = type === 'harian' ? '' : 'none';
+        });
 
         document.getElementById('cancelBtn').addEventListener('click', function() {
             document.getElementById('editModal').classList.add('hidden');
