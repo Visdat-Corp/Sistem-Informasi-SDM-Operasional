@@ -87,32 +87,18 @@ document.addEventListener('DOMContentLoaded', function () {
             statusEl.className = `px-2 py-1 rounded-full text-sm font-medium ${statusClass}`;
         }
 
-        // Handle maps
+        // Handle location names (not maps)
         const mapMasukContainer = document.querySelector('.modal-map-masuk');
         const mapKeluarContainer = document.querySelector('.modal-map-keluar');
 
-        if (koordinatMasuk && koordinatMasuk !== 'N/A') {
-            const coords = koordinatMasuk.split(',');
-            if (coords.length === 2) {
-                const lat = coords[0].trim();
-                const lng = coords[1].trim();
-                mapMasukContainer.innerHTML = `<iframe width="100%" height="200" frameborder="0" style="border:0" src="https://maps.google.com/maps?q=${lat},${lng}&output=embed" allowfullscreen></iframe>`;
-            } else {
-                mapMasukContainer.innerHTML = `<p class="text-sm text-gray-500">Koordinat tidak valid</p>`;
-            }
+        if (lokasiMasuk && lokasiMasuk !== 'N/A') {
+            mapMasukContainer.innerHTML = `<p class="text-sm text-gray-700 font-medium">${lokasiMasuk}</p>`;
         } else {
             mapMasukContainer.innerHTML = `<p class="text-sm text-gray-500">Lokasi Masuk Tidak Tersedia</p>`;
         }
 
-        if (koordinatKeluar && koordinatKeluar !== 'N/A') {
-            const coords = koordinatKeluar.split(',');
-            if (coords.length === 2) {
-                const lat = coords[0].trim();
-                const lng = coords[1].trim();
-                mapKeluarContainer.innerHTML = `<iframe width="100%" height="200" frameborder="0" style="border:0" src="https://maps.google.com/maps?q=${lat},${lng}&output=embed" allowfullscreen></iframe>`;
-            } else {
-                mapKeluarContainer.innerHTML = `<p class="text-sm text-gray-500">Koordinat tidak valid</p>`;
-            }
+        if (lokasiKeluar && lokasiKeluar !== 'N/A') {
+            mapKeluarContainer.innerHTML = `<p class="text-sm text-gray-700 font-medium">${lokasiKeluar}</p>`;
         } else {
             mapKeluarContainer.innerHTML = `<p class="text-sm text-gray-500">Lokasi Keluar Tidak Tersedia</p>`;
         }

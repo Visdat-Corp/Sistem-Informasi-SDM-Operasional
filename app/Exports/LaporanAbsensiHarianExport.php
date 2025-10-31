@@ -62,12 +62,15 @@ class LaporanAbsensiHarianExport implements FromArray, WithStyles, WithColumnWid
                     $status
                 ];
             } else {
+                // Check if the date is weekend
+                $statusNoAbsen = $date->isWeekend() ? 'Libur' : 'Tidak Hadir';
+                
                 $data[] = [
                     $karyawan->nama_karyawan,
                     '-',
                     '-',
                     '0 jam',
-                    'Tidak Hadir'
+                    $statusNoAbsen
                 ];
             }
         }
@@ -89,6 +92,29 @@ class LaporanAbsensiHarianExport implements FromArray, WithStyles, WithColumnWid
 
     private function determineStatus($absen)
     {
+        // Check override request status first
+        if ($absen->override_request) {
+            if ($absen->override_status === 'pending') {
+                return 'Tidak Hadir';
+            } elseif ($absen->override_status === 'rejected') {
+                return 'Tidak Hadir';
+            }
+            // If approved, continue with normal status determination below
+        }
+
+        // Check if the date is weekend (Saturday or Sunday) - HARI LIBUR
+        $tanggalAbsen = Carbon::parse($absen->tanggal_absen);
+        if ($tanggalAbsen->isWeekend()) {
+            // If no attendance record on weekend, it's a holiday
+            if (!$absen->jam_masuk) {
+                return 'Libur';
+            }
+            // If there's attendance on weekend, it could be lembur
+            if ($absen->is_lembur) {
+                return 'Lembur';
+            }
+        }
+
         // If is_lembur is true, set status to lembur
         if ($absen->is_lembur) {
             return 'Lembur';

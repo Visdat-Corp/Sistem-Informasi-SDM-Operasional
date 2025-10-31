@@ -85,10 +85,12 @@ class LaporanAbsensiExport implements FromArray, WithStyles, WithColumnWidths, W
             }
 
             for ($day = 1; $day <= $daysInMonth; $day++) {
+                $currentDate = Carbon::createFromDate($this->tahun, $this->bulan, $day);
                 if (isset($absensiMap[$day])) {
                     $status = $this->determineStatus($absensiMap[$day]);
                 } else {
-                    $status = 'Tidak Hadir';
+                    // Check if the current date is weekend
+                    $status = $currentDate->isWeekend() ? 'Libur' : 'Tidak Hadir';
                 }
                 $row[] = $status;
             }
@@ -120,6 +122,40 @@ class LaporanAbsensiExport implements FromArray, WithStyles, WithColumnWidths, W
 
     private function determineStatus($absen)
     {
+        // Check override request status first
+        if ($absen->override_request) {
+            if ($absen->override_status === 'pending') {
+                return 'Tidak Hadir';
+            } elseif ($absen->override_status === 'rejected') {
+                return 'Tidak Hadir';
+            }
+            // If approved, continue with normal status determination
+        }
+
+        // Check if the date is weekend (Saturday or Sunday) - HARI LIBUR
+        $tanggalAbsen = Carbon::parse($absen->tanggal_absen);
+        if ($tanggalAbsen->isWeekend()) {
+            // If no attendance record on weekend, it's a holiday
+            if (!$absen->jam_masuk) {
+                return 'Libur';
+            }
+            // If there's attendance on weekend, it could be lembur
+            if ($absen->is_lembur) {
+                return 'Lembur';
+            }
+        }
+
+        // Check holiday from jadwal_pengecualian
+        $isHoliday = \App\Models\JadwalPengecualian::isHoliday($absen->tanggal_absen);
+        if ($isHoliday) {
+            if (!$absen->jam_masuk) {
+                return 'Libur';
+            }
+            if ($absen->is_lembur) {
+                return 'Lembur';
+            }
+        }
+
         // If is_lembur is true, set status to lembur
         if ($absen->is_lembur) {
             return 'Lembur';

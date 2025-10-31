@@ -45,6 +45,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     const email = this.getAttribute('data-email');
                     const posisi = this.getAttribute('data-posisi');
                     const departemen = this.getAttribute('data-departemen');
+                    const lokasi = this.getAttribute('data-lokasi');
                     const status = this.getAttribute('data-status');
 
                     // Populate the edit form
@@ -53,6 +54,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     const editEmail = document.getElementById('editEmail');
                     const editPosisi = document.getElementById('editPosisi');
                     const editDepartemen = document.getElementById('editDepartemen');
+                    const editLokasi = document.getElementById('editLokasi');
                     const editStatus = document.getElementById('editStatus');
 
                     if (editNama) editNama.value = nama;
@@ -60,6 +62,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (editEmail) editEmail.value = email || '';
                     if (editPosisi) editPosisi.value = posisi || '';
                     if (editDepartemen) editDepartemen.value = departemen || '';
+                    if (editLokasi) editLokasi.value = lokasi || '';
                     if (editStatus) editStatus.value = status || '';
 
                     // Set the form action based on current page

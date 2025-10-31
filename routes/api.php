@@ -46,10 +46,22 @@ Route::prefix('v1')->group(function () {
         Route::post('/attendance/check-out', [EmployeeController::class, 'apiCheckOut']);
         Route::post('/attendance/overtime', [EmployeeController::class, 'apiOvertime']);
         
+        // Override request - support both URL patterns for backward compatibility
+        Route::post('/attendance/request-override', [EmployeeController::class, 'apiRequestOverride']);
+        Route::post('/attendance/override-request', [EmployeeController::class, 'apiRequestOverride']); // Alias for mobile app
+        
+        // DEBUG ENDPOINT - untuk testing (akan dihapus setelah debugging selesai)
+        Route::post('/attendance/debug-override', [EmployeeController::class, 'debugOverrideRequest']);
+        
         // Attendance history
         Route::get('/attendance/history', [EmployeeController::class, 'getAttendanceHistory']);
         Route::get('/attendance/today', [EmployeeController::class, 'getTodayAttendance']);
         Route::get('/attendance/summary', [EmployeeController::class, 'getAttendanceSummary']);
+        
+        // Attendance validation (untuk prevent double absen)
+        Route::get('/attendance/check-today', [App\Http\Controllers\API\V1\AttendanceValidationController::class, 'checkToday']);
+        Route::get('/attendance/detail-today', [App\Http\Controllers\API\V1\AttendanceValidationController::class, 'detailToday']);
+        Route::post('/attendance/validate', [App\Http\Controllers\API\V1\AttendanceValidationController::class, 'validateAttendance']);
         
         // Location validation
         Route::post('/location/validate', [ApiController::class, 'validateLocation']);
@@ -68,9 +80,4 @@ Route::prefix('v1')->group(function () {
     });
 });
 
-// Legacy routes for backward compatibility (without v1 prefix)
-Route::post('/karyawan/login', [EmployeeController::class, 'login']);
-Route::middleware('auth:karyawan')->group(function () {
-    Route::post('/check-in', [EmployeeController::class, 'checkIn']);
-    Route::post('/check-out', [EmployeeController::class, 'checkOut']);
-});
+

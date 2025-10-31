@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     {{-- Vite directive, jika Anda menggunakan build tools Laravel --}}
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* Menggunakan font Inter sebagai default */
         body {
@@ -72,10 +73,104 @@
             </div>
         </div>
         
-        <!-- Anda bisa menambahkan elemen UI lainnya di sini -->
+        <!-- Performa Absensi Bulan Ini -->
+        <div class="mt-8 bg-white p-6 rounded-2xl shadow-md">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">Performa Absensi Bulan Ini</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Grafik Pie Chart -->
+                <div class="flex items-center justify-center">
+                    <div style="max-width: 350px; max-height: 350px;">
+                        <canvas id="performaChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Statistik Detail -->
+                <div class="flex flex-col justify-center space-y-4">
+                    <div class="flex items-center justify-between p-4 bg-green-50 rounded-lg">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-4 h-4 bg-green-500 rounded"></div>
+                            <span class="text-gray-700 font-medium">Tepat Waktu</span>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-2xl font-bold text-green-600">{{ $performaAbsensi['tepat_waktu']['percentage'] }}%</p>
+                            <p class="text-sm text-gray-500">{{ $performaAbsensi['tepat_waktu']['count'] }} kali</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between p-4 bg-yellow-50 rounded-lg">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-4 h-4 bg-yellow-500 rounded"></div>
+                            <span class="text-gray-700 font-medium">Terlambat</span>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-2xl font-bold text-yellow-600">{{ $performaAbsensi['terlambat']['percentage'] }}%</p>
+                            <p class="text-sm text-gray-500">{{ $performaAbsensi['terlambat']['count'] }} kali</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between p-4 bg-red-50 rounded-lg">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-4 h-4 bg-red-500 rounded"></div>
+                            <span class="text-gray-700 font-medium">Tidak Hadir</span>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-2xl font-bold text-red-600">{{ $performaAbsensi['tidak_hadir']['percentage'] }}%</p>
+                            <p class="text-sm text-gray-500">{{ $performaAbsensi['tidak_hadir']['count'] }} kali</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
     </main>
 
+    <script>
+        // Pie Chart for Performa Absensi
+        const ctx = document.getElementById('performaChart').getContext('2d');
+        const performaChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: ['Tepat Waktu', 'Terlambat', 'Tidak Hadir'],
+                datasets: [{
+                    data: [
+                        {{ $performaAbsensi['tepat_waktu']['percentage'] }},
+                        {{ $performaAbsensi['terlambat']['percentage'] }},
+                        {{ $performaAbsensi['tidak_hadir']['percentage'] }}
+                    ],
+                    backgroundColor: [
+                        '#10b981', // green-500
+                        '#eab308', // yellow-500
+                        '#ef4444'  // red-500
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 15,
+                            font: {
+                                size: 12,
+                                family: 'Inter'
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.label + ': ' + context.parsed + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
     <script src="{{ asset('js/update-clock.js') }}"></script>
 
 </body>

@@ -7,8 +7,36 @@ use Illuminate\Database\Eloquent\Model;
 class Absensi extends Model
 {
     protected $table = 'absensi';
-    protected $fillable = ['id_karyawan', 'tanggal_absen', 'jam_masuk', 'jam_keluar', 'lokasi_absen_masuk', 'lokasi_absen_keluar', 'foto_masuk', 'foto_keluar', 'keterangan', 'id_jamKerja', 'status', 'menit_keterlambatan', 'menit_pulang_cepat', 'is_lembur'];
+    protected $fillable = [
+        'id_karyawan', 
+        'tanggal_absen', 
+        'jam_masuk', 
+        'jam_keluar', 
+        'lokasi_absen_masuk', 
+        'lokasi_absen_keluar', 
+        'foto_masuk', 
+        'foto_keluar', 
+        'keterangan', 
+        'id_jamKerja', 
+        'status', 
+        'menit_keterlambatan', 
+        'menit_pulang_cepat', 
+        'is_lembur',
+        'override_request',
+        'override_reason',
+        'override_status',
+        'override_type',
+        'override_requested_at',
+        'override_responded_at',
+        'override_responded_by',
+        'override_response_note'
+    ];
     protected $primaryKey = 'id_absensi';
+    
+    protected $casts = [
+        'override_requested_at' => 'datetime',
+        'override_responded_at' => 'datetime',
+    ];
 
     public function karyawan()
     {
@@ -18,6 +46,11 @@ class Absensi extends Model
     public function jamKerja()
     {
         return $this->belongsTo(JamKerja::class, 'id_jamKerja');
+    }
+    
+    public function overrideRespondedBy()
+    {
+        return $this->belongsTo(Karyawan::class, 'override_responded_by', 'id_karyawan');
     }
 
     /**

@@ -50,30 +50,7 @@ class EmployeeController extends Controller
         return response()->json($response, $statusCode);
     }
 
-    /**
-     * Legacy login method for backward compatibility
-     */
-    public function login(Request $request)
-    {
-        $request->validate([
-            'username' => 'required',
-            'password' => 'required',
-        ]);
 
-        $loginField = filter_var($request->username, FILTER_VALIDATE_EMAIL) ? 'email_karyawan' : 'username_karyawan';
-
-        $credentials = [
-            $loginField => $request->username,
-            'password' => $request->password,
-        ];
-
-        if (Auth::guard('karyawan')->attempt($credentials)) {
-            $request->session()->regenerate();
-            return response()->json(['message' => 'Login berhasil']);
-        }
-
-        return response()->json(['error' => 'Username/Email atau password salah'], 401);
-    }
 
     /**
      * API login method with enhanced response
@@ -202,66 +179,7 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * Legacy check-in method for backward compatibility
-     */
-    public function checkIn(Request $request)
-    {
-        $request->validate([
-            'latitude' => 'required|numeric|between:-90,90',
-            'longitude' => 'required|numeric|between:-180,180',
-            'foto' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'overtime' => 'sometimes|boolean',
-        ]);
 
-        $karyawan = Auth::guard('karyawan')->user();
-
-        // Check if already checked in today
-        $today = Carbon::today()->toDateString();
-        $existingAbsensi = Absensi::where('id_karyawan', $karyawan->id_karyawan)
-            ->where('tanggal_absen', $today)
-            ->first();
-
-        if ($existingAbsensi && $existingAbsensi->jam_masuk) {
-            return response()->json(['error' => 'Anda sudah check-in hari ini.'], 400);
-        }
-
-        // Validate location
-        $isWithinRadius = false;
-        $lokasiKerjas = LokasiKerja::all();
-        foreach ($lokasiKerjas as $lokasi) {
-            if ($lokasi->isWithinRadius($request->latitude, $request->longitude)) {
-                $isWithinRadius = true;
-                break;
-            }
-        }
-
-        if (!$isWithinRadius) {
-            return response()->json(['error' => 'Lokasi Anda di luar area yang ditentukan.'], 403);
-        }
-
-        // Handle photo upload
-        $fotoPath = null;
-        if ($request->hasFile('foto')) {
-            $fotoPath = $request->file('foto')->store('fotos', 'public');
-        }
-
-        $data = [
-            'id_karyawan' => $karyawan->id_karyawan,
-            'tanggal_absen' => $today,
-            'jam_masuk' => Carbon::now()->toTimeString(),
-            'lokasi_absen_masuk' => $request->latitude . ',' . $request->longitude,
-            'foto_masuk' => $fotoPath,
-        ];
-
-        if ($existingAbsensi) {
-            $existingAbsensi->update($data);
-        } else {
-            Absensi::create($data);
-        }
-
-        return response()->json(['message' => 'Check-in berhasil.']);
-    }
 
     /**
      * API check-in method with enhanced response
@@ -273,6 +191,7 @@ class EmployeeController extends Controller
             'longitude' => 'required|numeric|between:-180,180',
             'foto' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
             'overtime' => 'sometimes|boolean',
+            'attendance_type' => 'sometimes|string|in:normal,lembur,dinas_luar',
         ]);
 
         try {
@@ -280,10 +199,39 @@ class EmployeeController extends Controller
             if (!$karyawan) {
                 return $this->errorResponse('Unauthenticated', null, 401);
             }
+            
+            // Load lokasiKerja relationship
+            $karyawan->load('lokasiKerja');
+            
             Log::info('User authenticated for check-in: ' . $karyawan->id_karyawan);
 
             // Determine the date for attendance
             $today = $request->has('tanggal') ? $request->tanggal : Carbon::today()->toDateString();
+            $todayCarbon = Carbon::parse($today);
+
+            // Check if today is weekend (Saturday or Sunday) or scheduled holiday
+            $isWeekend = $todayCarbon->isWeekend();
+            $isHoliday = \App\Models\JadwalPengecualian::isHoliday($today);
+            $holidayName = \App\Models\JadwalPengecualian::getHolidayName($today);
+            
+            // Determine attendance type
+            $attendanceType = $request->attendance_type ?? 'normal';
+            $isLembur = $request->overtime ?? ($attendanceType === 'lembur');
+            
+            // VALIDATION: On weekends or holidays, only overtime (lembur) is allowed
+            if (($isWeekend || $isHoliday) && !$isLembur) {
+                $liburMessage = $isWeekend ? 'hari libur (Sabtu/Minggu)' : "hari libur ({$holidayName})";
+                return $this->errorResponse(
+                    "Hari ini adalah {$liburMessage}. Anda hanya dapat melakukan absensi dengan memilih 'Lembur'.",
+                    [
+                        'is_weekend' => $isWeekend,
+                        'is_holiday' => $isHoliday,
+                        'holiday_name' => $holidayName,
+                        'message' => 'Silakan pilih opsi Lembur untuk melakukan absensi pada hari libur.'
+                    ],
+                    422
+                );
+            }
 
             // Check if already checked in on the specified date
             $existingAbsensi = Absensi::where('id_karyawan', $karyawan->id_karyawan)
@@ -294,26 +242,92 @@ class EmployeeController extends Controller
                 return $this->errorResponse('Kamu sudah check-in hari ini', null, 400);
             }
 
-            // Validate location (skip if no locations configured)
+            $isDinasLuar = $attendanceType === 'dinas_luar';
+            
+            // VALIDATION: Check if overtime is allowed based on jam_lembur setting
+            if ($isLembur && !($isWeekend || $isHoliday)) {
+                // Get jam kerja settings
+                $jamKerja = JamKerja::first();
+                
+                if (!$jamKerja || !$jamKerja->jam_lembur) {
+                    return $this->errorResponse(
+                        'Pengaturan jam lembur belum dikonfigurasi. Silakan hubungi admin.',
+                        null,
+                        422
+                    );
+                }
+                
+                $currentTime = Carbon::now();
+                $jamLemburMulai = Carbon::parse($today . ' ' . $jamKerja->jam_lembur);
+                
+                // Check if current time is before overtime start time
+                if ($currentTime->lt($jamLemburMulai)) {
+                    return $this->errorResponse(
+                        "Lembur hanya dapat dilakukan setelah jam {$jamKerja->jam_lembur}. Waktu sekarang: {$currentTime->format('H:i:s')}.",
+                        [
+                            'jam_lembur_mulai' => $jamKerja->jam_lembur,
+                            'waktu_sekarang' => $currentTime->format('H:i:s'),
+                            'message' => 'Silakan tunggu hingga jam lembur dimulai atau pilih absensi normal.'
+                        ],
+                        422
+                    );
+                }
+                
+                Log::info('Overtime validation passed - current time: ' . $currentTime->format('H:i:s') . ' >= jam_lembur: ' . $jamKerja->jam_lembur);
+            }
+            
+            // Skip location validation for overtime (lembur) and dinas luar
+            $skipLocationValidation = $isLembur || $isDinasLuar;
+
+            // Validate location (skip if overtime/dinas luar)
             $isWithinRadius = false;
             $validLocation = null;
-            $lokasiCount = LokasiKerja::count();
-            if ($lokasiCount === 0) {
+            
+            if ($skipLocationValidation) {
                 $isWithinRadius = true;
-                Log::info('Skipping location validation (no LokasiKerja configured) for user: ' . $karyawan->id_karyawan);
+                Log::info('Skipping location validation for ' . $attendanceType . ' - user: ' . $karyawan->id_karyawan);
             } else {
-                $lokasiKerjas = LokasiKerja::all();
-                foreach ($lokasiKerjas as $lokasi) {
-                    if ($lokasi->isWithinRadius($request->latitude, $request->longitude)) {
-                        $isWithinRadius = true;
-                        $validLocation = $lokasi->lokasi_kerja;
-                        break;
-                    }
+                // Check if karyawan has assigned work location (area kerja)
+                if (!$karyawan->lokasiKerja) {
+                    Log::warning('No work location assigned for user: ' . $karyawan->id_karyawan);
+                    return $this->errorResponse(
+                        'Anda belum memiliki lokasi kerja yang ditentukan. Silakan hubungi admin untuk mengatur lokasi kerja Anda.',
+                        null,
+                        422
+                    );
                 }
-
-                if (!$isWithinRadius) {
-                    Log::info('Location validation failed for user: ' . $karyawan->id_karyawan . ' at ' . $request->latitude . ',' . $request->longitude);
-                    return $this->errorResponse('Lokasi kamu berada di luar area kerja', null, 422);
+                
+                Log::info('Checking location for user ' . $karyawan->id_karyawan . ' against area kerja: ' . $karyawan->lokasiKerja->lokasi_kerja);
+                
+                // Use karyawan's specific work location for validation - ONLY check assigned location
+                try {
+                    if ($karyawan->lokasiKerja->isWithinRadius($request->latitude, $request->longitude)) {
+                        $isWithinRadius = true;
+                        $validLocation = $karyawan->lokasiKerja->lokasi_kerja;
+                        Log::info('Location validated against karyawan area kerja: ' . $validLocation);
+                    } else {
+                        // Calculate actual distance for better error message
+                        $distance = $karyawan->lokasiKerja->getDistanceFrom($request->latitude, $request->longitude);
+                        $radius = $karyawan->lokasiKerja->radius;
+                        
+                        Log::info('Location validation failed - outside karyawan area kerja for user: ' . $karyawan->id_karyawan . ' at ' . $request->latitude . ',' . $request->longitude);
+                        
+                        $errorMessage = sprintf(
+                            'Lokasi Anda berada di luar area kerja "%s". Jarak Anda: %.1f meter (maksimal: %.0f meter). Silakan kembali ke area kerja untuk melakukan check-in.',
+                            $karyawan->lokasiKerja->lokasi_kerja,
+                            $distance,
+                            $radius
+                        );
+                        
+                        return $this->errorResponse($errorMessage, [
+                            'distance' => round($distance, 1),
+                            'max_radius' => $radius,
+                            'location_name' => $karyawan->lokasiKerja->lokasi_kerja
+                        ], 422);
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Error checking location radius: ' . $e->getMessage());
+                    return $this->errorResponse('Gagal memvalidasi lokasi. Silakan coba lagi.', $e->getMessage(), 500);
                 }
             }
 
@@ -334,7 +348,7 @@ class EmployeeController extends Controller
                 'lokasi_absen_masuk' => $request->latitude . ',' . $request->longitude,
                 'foto_masuk' => $fotoPath,
                 'id_jamKerja' => $jamKerja ? $jamKerja->id_jamKerja : null,
-                'is_lembur' => $request->overtime ?? false,
+                'is_lembur' => $isLembur,
             ];
 
             Log::info('apiCheckIn payload', ['data' => $data]);
@@ -349,8 +363,42 @@ class EmployeeController extends Controller
             }
 
             // Determine and set status
-            $status = $this->determineStatus($absensi);
-            $absensi->update(['status' => strtolower($status)]);
+            // If dinas luar, set status explicitly and auto-fill checkout
+            if ($isDinasLuar) {
+                $absensi->update(['status' => 'dinas luar']);
+                
+                // Auto checkout untuk dinas luar - set jam_keluar sesuai jam pulang normal
+                $jamKerja = JamKerja::first();
+                if ($jamKerja && $jamKerja->jam_keluar_normal) {
+                    $tanggalAbsen = Carbon::parse($today);
+                    $jamKeluarNormal = Carbon::parse($jamKerja->jam_keluar_normal);
+                    $autoCheckoutTime = $tanggalAbsen->setTime($jamKeluarNormal->hour, $jamKeluarNormal->minute, $jamKeluarNormal->second);
+                    
+                    $absensi->update([
+                        'jam_keluar' => $autoCheckoutTime->toTimeString(),
+                        'lokasi_absen_keluar' => $request->latitude . ',' . $request->longitude,
+                    ]);
+                    
+                    Log::info('Auto checkout set for dinas luar: ' . $autoCheckoutTime->toTimeString());
+                }
+            } else {
+                $status = $this->determineStatus($absensi);
+                $absensi->update(['status' => strtolower($status)]);
+            }
+
+            // Detect if late check-in
+            $isLate = false;
+            $lateMinutes = 0;
+            if ($jamKerja && $jamKerja->jam_masuk_normal && !$isDinasLuar && !$isLembur) {
+                $jamMasukNormal = Carbon::parse($jamKerja->jam_masuk_normal);
+                $toleransi = $jamKerja->toleransi_keterlambatan ?? 0;
+                $batasWaktu = $jamMasukNormal->copy()->addMinutes($toleransi);
+                
+                if ($currentTime->gt($batasWaktu)) {
+                    $isLate = true;
+                    $lateMinutes = $currentTime->diffInMinutes($jamMasukNormal);
+                }
+            }
 
             $responseData = [
                 'attendance_id' => $absensi->id_absensi,
@@ -359,6 +407,9 @@ class EmployeeController extends Controller
                 'location' => $validLocation,
                 'coordinates' => $request->latitude . ',' . $request->longitude,
                 'photo_url' => $fotoPath ? Storage::url($fotoPath) : null,
+                'is_late' => $isLate,
+                'late_minutes' => $lateMinutes,
+                'normal_check_in_time' => $jamKerja && $jamKerja->jam_masuk_normal ? $jamKerja->jam_masuk_normal : null,
             ];
 
             return $this->jsonResponse($responseData, 'Check-in successful');
@@ -384,61 +435,7 @@ class EmployeeController extends Controller
         }
     }
 
-    /**
-     * Legacy check-out method for backward compatibility
-     */
-    public function checkOut(Request $request)
-    {
-        $request->validate([
-            'latitude' => 'required|numeric|between:-90,90',
-            'longitude' => 'required|numeric|between:-180,180',
-            'foto' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-        ]);
 
-        $karyawan = Auth::guard('karyawan')->user();
-
-        $today = Carbon::today()->toDateString();
-        $absensi = Absensi::where('id_karyawan', $karyawan->id_karyawan)
-            ->where('tanggal_absen', $today)
-            ->whereNotNull('jam_masuk')
-            ->first();
-
-        if (!$absensi) {
-            return response()->json(['error' => 'Anda belum check-in hari ini.'], 400);
-        }
-
-        if ($absensi->jam_keluar) {
-            return response()->json(['error' => 'Anda sudah check-out hari ini.'], 400);
-        }
-
-        // Validate location for check-out as well
-        $isWithinRadius = false;
-        $lokasiKerjas = LokasiKerja::all();
-        foreach ($lokasiKerjas as $lokasi) {
-            if ($lokasi->isWithinRadius($request->latitude, $request->longitude)) {
-                $isWithinRadius = true;
-                break;
-            }
-        }
-
-        if (!$isWithinRadius) {
-            return response()->json(['error' => 'Lokasi Anda di luar area yang ditentukan.'], 403);
-        }
-
-        // Handle photo upload
-        $fotoPath = null;
-        if ($request->hasFile('foto')) {
-            $fotoPath = $request->file('foto')->store('fotos', 'public');
-        }
-
-        $absensi->update([
-            'jam_keluar' => Carbon::now()->toTimeString(),
-            'lokasi_absen_keluar' => $request->latitude . ',' . $request->longitude,
-            'foto_keluar' => $fotoPath,
-        ]);
-
-        return response()->json(['message' => 'Check-out berhasil.']);
-    }
 
     /**
      * API check-out method with enhanced response
@@ -458,6 +455,8 @@ class EmployeeController extends Controller
             }
 
             $today = Carbon::today()->toDateString();
+            $todayCarbon = Carbon::parse($today);
+            
             $absensi = Absensi::where('id_karyawan', $karyawan->id_karyawan)
                 ->where('tanggal_absen', $today)
                 ->whereNotNull('jam_masuk')
@@ -471,26 +470,82 @@ class EmployeeController extends Controller
                 return $this->errorResponse('Kamu sudah check out hari ini', null, 400);
             }
 
-            // Validate location for check-out as well (skip if no locations configured)
+            // Check if today is weekend (Saturday or Sunday) or scheduled holiday
+            $isWeekend = $todayCarbon->isWeekend();
+            $isHoliday = \App\Models\JadwalPengecualian::isHoliday($today);
+            $holidayName = \App\Models\JadwalPengecualian::getHolidayName($today);
+            
+            // VALIDATION: On weekends or holidays, only lembur attendance is allowed
+            if (($isWeekend || $isHoliday) && !$absensi->is_lembur) {
+                $liburMessage = $isWeekend ? 'hari libur (Sabtu/Minggu)' : "hari libur ({$holidayName})";
+                return $this->errorResponse(
+                    "Hari ini adalah {$liburMessage}. Anda hanya dapat melakukan check-out jika absensi Anda bertipe 'Lembur'.",
+                    [
+                        'is_weekend' => $isWeekend,
+                        'is_holiday' => $isHoliday,
+                        'holiday_name' => $holidayName,
+                        'message' => 'Check-out tidak diizinkan untuk absensi normal pada hari libur.'
+                    ],
+                    422
+                );
+            }
+
+            // Check if this is lembur or dinas luar attendance to skip location validation
+            $skipLocationValidation = $absensi->is_lembur || (strtolower($absensi->status) === 'dinas luar');
+
+            // Validate location for check-out as well (skip if lembur/dinas luar)
             $isWithinRadius = false;
             $validLocation = null;
-            $lokasiCount = LokasiKerja::count();
-            if ($lokasiCount === 0) {
+            
+            if ($skipLocationValidation) {
                 $isWithinRadius = true;
-                Log::info('Skipping location validation (no LokasiKerja configured) for user: ' . $karyawan->id_karyawan);
+                $validLocation = $absensi->is_lembur ? 'Lembur (Bebas Lokasi)' : 'Dinas Luar (Bebas Lokasi)';
+                Log::info('Skipping location validation for checkout (lembur/dinas luar) for user: ' . $karyawan->id_karyawan);
             } else {
-                $lokasiKerjas = LokasiKerja::all();
+                // Load karyawan's work location
+                $karyawan->load('lokasiKerja');
                 
-                foreach ($lokasiKerjas as $lokasi) {
-                    if ($lokasi->isWithinRadius($request->latitude, $request->longitude)) {
-                        $isWithinRadius = true;
-                        $validLocation = $lokasi->lokasi_kerja;
-                        break;
-                    }
+                // Check if karyawan has assigned work location
+                if (!$karyawan->lokasiKerja) {
+                    Log::warning('No work location assigned for user on checkout: ' . $karyawan->id_karyawan);
+                    return $this->errorResponse(
+                        'Anda belum memiliki lokasi kerja yang ditentukan. Silakan hubungi admin untuk mengatur lokasi kerja Anda.',
+                        null,
+                        422
+                    );
                 }
-
-                if (!$isWithinRadius) {
-                    return $this->errorResponse('Lokasi kamu berada di luar area kerja', null, 422);
+                
+                Log::info('Checking checkout location for user ' . $karyawan->id_karyawan . ' against area kerja: ' . $karyawan->lokasiKerja->lokasi_kerja);
+                
+                // Use karyawan's specific work location for validation - ONLY check assigned location
+                try {
+                    if ($karyawan->lokasiKerja->isWithinRadius($request->latitude, $request->longitude)) {
+                        $isWithinRadius = true;
+                        $validLocation = $karyawan->lokasiKerja->lokasi_kerja;
+                        Log::info('Checkout location validated against karyawan area kerja: ' . $validLocation);
+                    } else {
+                        // Calculate actual distance for better error message
+                        $distance = $karyawan->lokasiKerja->getDistanceFrom($request->latitude, $request->longitude);
+                        $radius = $karyawan->lokasiKerja->radius;
+                        
+                        Log::info('Check-out location validation failed - outside karyawan area kerja for user: ' . $karyawan->id_karyawan . ' at ' . $request->latitude . ',' . $request->longitude);
+                        
+                        $errorMessage = sprintf(
+                            'Lokasi Anda berada di luar area kerja "%s". Jarak Anda: %.1f meter (maksimal: %.0f meter). Silakan kembali ke area kerja untuk melakukan check-out.',
+                            $karyawan->lokasiKerja->lokasi_kerja,
+                            $distance,
+                            $radius
+                        );
+                        
+                        return $this->errorResponse($errorMessage, [
+                            'distance' => round($distance, 1),
+                            'max_radius' => $radius,
+                            'location_name' => $karyawan->lokasiKerja->lokasi_kerja
+                        ], 422);
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Error checking checkout location radius: ' . $e->getMessage());
+                    return $this->errorResponse('Gagal memvalidasi lokasi. Silakan coba lagi.', $e->getMessage(), 500);
                 }
             }
 
@@ -523,6 +578,21 @@ class EmployeeController extends Controller
             $workHours = floor($workDuration / 60);
             $workMinutes = $workDuration % 60;
 
+            // Detect if early check-out
+            $isEarly = false;
+            $earlyMinutes = 0;
+            $jamKerja = JamKerja::first();
+            if ($jamKerja && $jamKerja->jam_keluar_normal) {
+                $jamKeluarNormal = Carbon::parse($jamKerja->jam_keluar_normal);
+                $toleransi = $jamKerja->toleransi_pulang_cepat ?? 0;
+                $batasWaktu = $jamKeluarNormal->copy()->subMinutes($toleransi);
+                
+                if ($currentTime->lt($batasWaktu)) {
+                    $isEarly = true;
+                    $earlyMinutes = $jamKeluarNormal->diffInMinutes($currentTime);
+                }
+            }
+
             $responseData = [
                 'attendance_id' => $absensi->id_absensi,
                 'check_out_time' => $currentTime->format('H:i:s'),
@@ -535,6 +605,9 @@ class EmployeeController extends Controller
                     'total_minutes' => $workDuration
                 ],
                 'photo_url' => $fotoPath ? Storage::url($fotoPath) : null,
+                'is_early' => $isEarly,
+                'early_minutes' => $earlyMinutes,
+                'normal_check_out_time' => $jamKerja && $jamKerja->jam_keluar_normal ? $jamKerja->jam_keluar_normal : null,
             ];
 
             return $this->jsonResponse($responseData, 'Check-out successful');
@@ -686,27 +759,66 @@ class EmployeeController extends Controller
             'page' => 'sometimes|integer|min:1',
             'start_date' => 'sometimes|date',
             'end_date' => 'sometimes|date|after_or_equal:start_date',
+            'month' => 'sometimes|integer|min:1|max:12',
+            'year' => 'sometimes|integer|min:2020|max:2100',
         ]);
 
         try {
             $karyawan = $request->user();
-            $limit = $request->limit ?? 20;
+            if (!$karyawan) {
+                return $this->errorResponse('Unauthenticated', null, 401);
+            }
             
+            $limit = $request->limit ?? 30;
+            
+            // Build query based on filter
             $query = Absensi::where('id_karyawan', $karyawan->id_karyawan)
-                ->orderBy('tanggal_absen', 'desc')
-                ->orderBy('jam_masuk', 'desc');
-
-            if ($request->start_date) {
-                $query->where('tanggal_absen', '>=', $request->start_date);
+                ->with(['jamKerja']);
+            
+            // Filter by date range
+            if ($request->has('start_date') && $request->has('end_date')) {
+                $startDate = $request->start_date;
+                $endDate = $request->end_date;
+                $query->whereBetween('tanggal_absen', [$startDate, $endDate]);
+            } 
+            // Filter by month and year
+            elseif ($request->has('month') && $request->has('year')) {
+                $startDate = Carbon::createFromDate($request->year, $request->month, 1)->startOfMonth();
+                $endDate = Carbon::createFromDate($request->year, $request->month, 1)->endOfMonth();
+                $query->whereBetween('tanggal_absen', [$startDate->toDateString(), $endDate->toDateString()]);
+            } 
+            // Filter by year only
+            elseif ($request->has('year')) {
+                $startDate = Carbon::createFromDate($request->year, 1, 1)->startOfYear();
+                $endDate = Carbon::createFromDate($request->year, 12, 31)->endOfYear();
+                $query->whereBetween('tanggal_absen', [$startDate->toDateString(), $endDate->toDateString()]);
+            }
+            // Default: Last 30 days
+            else {
+                $startDate = Carbon::today()->subDays(30);
+                $endDate = Carbon::today();
+                $query->whereBetween('tanggal_absen', [$startDate->toDateString(), $endDate->toDateString()]);
             }
             
-            if ($request->end_date) {
-                $query->where('tanggal_absen', '<=', $request->end_date);
-            }
+            $query->orderBy('tanggal_absen', 'desc')
+                  ->orderBy('jam_masuk', 'desc');
 
             $attendances = $query->paginate($limit);
 
-            $formattedData = $attendances->map(function ($attendance) {
+            // If no data found
+            if ($attendances->isEmpty()) {
+                return $this->jsonResponse([
+                    'attendances' => [],
+                    'pagination' => [
+                        'current_page' => 1,
+                        'last_page' => 1,
+                        'per_page' => $limit,
+                        'total' => 0,
+                    ]
+                ], 'Tidak ada data absensi untuk periode yang dipilih');
+            }
+
+            $formattedData = $attendances->map(function ($attendance) use ($karyawan) {
                 $workDuration = null;
                 $terlambat = '00:00:00';
                 $cepatPulang = '00:00:00';
@@ -750,22 +862,37 @@ class EmployeeController extends Controller
                         $cepatPulang = sprintf('%02d:%02d:%02d', $jamCepat, $menitCepat, 0);
                     }
                 }
+                
+                // Get location name only
+                $lokasiMasuk = null;
+                $lokasiKeluar = null;
+                if ($karyawan->lokasiKerja) {
+                    $lokasiMasuk = $karyawan->lokasiKerja->lokasi_kerja;
+                    $lokasiKeluar = $karyawan->lokasiKerja->lokasi_kerja;
+                }
+                
+                // Determine status
+                $status = $this->determineHistoryStatus($attendance);
 
                 return [
                     'id' => $attendance->id_absensi,
                     'date' => $attendance->tanggal_absen,
+                    'day_name' => Carbon::parse($attendance->tanggal_absen)->locale('id')->isoFormat('dddd'),
                     'check_in_time' => $attendance->jam_masuk,
                     'check_out_time' => $attendance->jam_keluar,
-                    'check_in_location' => $attendance->lokasi_absen_masuk,
-                    'check_out_location' => $attendance->lokasi_absen_keluar,
+                    'check_in_location' => $lokasiMasuk,
+                    'check_out_location' => $lokasiKeluar,
                     'check_in_photo' => $attendance->foto_masuk ? Storage::url($attendance->foto_masuk) : null,
                     'check_out_photo' => $attendance->foto_keluar ? Storage::url($attendance->foto_keluar) : null,
                     'notes' => $attendance->keterangan,
                     'work_duration' => $workDuration,
                     'is_lembur' => $attendance->is_lembur,
-                    'status' => $attendance->status,
+                    'status' => $status,
                     'terlambat' => $terlambat,
                     'cepat_pulang' => $cepatPulang,
+                    'override_request' => $attendance->override_request,
+                    'override_status' => $attendance->override_status,
+                    'override_reason' => $attendance->override_reason,
                 ];
             });
 
@@ -781,8 +908,111 @@ class EmployeeController extends Controller
 
             return $this->jsonResponse($responseData, 'Attendance history retrieved successfully');
         } catch (\Exception $e) {
+            Log::error('Error in getAttendanceHistory: ' . $e->getMessage());
             return $this->errorResponse('Failed to retrieve attendance history', $e->getMessage(), 500);
         }
+    }
+    
+    /**
+     * Get base status without override considerations (for history)
+     */
+    private function getBaseHistoryStatus($attendance)
+    {
+        // Check if weekend or holiday
+        $tanggalAbsen = Carbon::parse($attendance->tanggal_absen);
+        if ($tanggalAbsen->isWeekend()) {
+            if (!$attendance->jam_masuk) {
+                return 'Libur';
+            }
+            if ($attendance->is_lembur) {
+                return 'Lembur';
+            }
+        }
+        
+        // Check holiday from jadwal_pengecualian
+        $isHoliday = \App\Models\JadwalPengecualian::isHoliday($attendance->tanggal_absen);
+        if ($isHoliday) {
+            if (!$attendance->jam_masuk) {
+                return 'Libur';
+            }
+            if ($attendance->is_lembur) {
+                return 'Lembur';
+            }
+        }
+
+        // If is_lembur is true, set status to lembur
+        if ($attendance->is_lembur) {
+            return 'Lembur';
+        }
+
+        // If status is already set to manual statuses, return it
+        if ($attendance->status && in_array(strtolower($attendance->status), ['izin', 'sakit', 'cuti', 'dinas luar'])) {
+            return ucfirst($attendance->status);
+        }
+
+        if (!$attendance->jam_masuk) {
+            return 'Tidak Hadir';
+        }
+
+        if ($attendance->jamKerja) {
+            $jamMasukNormal = Carbon::createFromFormat('H:i:s', $attendance->jamKerja->jam_masuk_normal);
+            $jamMasukActual = Carbon::createFromFormat('H:i:s', $attendance->jam_masuk);
+
+            // Tambahkan toleransi keterlambatan
+            $toleransi = $attendance->jamKerja->toleransi_keterlambatan ?? 0;
+            $jamMasukNormalWithTolerance = $jamMasukNormal->copy()->addMinutes($toleransi);
+
+            $isLateIn = $jamMasukActual->gt($jamMasukNormalWithTolerance);
+
+            if (!$attendance->jam_keluar) {
+                // No check-out, status based on check-in only
+                return $isLateIn ? 'Terlambat' : 'Hadir';
+            }
+
+            // Has check-out
+            $jamKeluarNormal = Carbon::createFromFormat('H:i:s', $attendance->jamKerja->jam_keluar_normal);
+            $jamKeluarActual = Carbon::createFromFormat('H:i:s', $attendance->jam_keluar);
+            $toleransiPulangCepat = $attendance->jamKerja->toleransi_pulang_cepat ?? 0;
+            $jamKeluarNormalWithTolerance = $jamKeluarNormal->copy()->subMinutes($toleransiPulangCepat);
+
+            $isEarlyOut = $jamKeluarActual->lt($jamKeluarNormalWithTolerance);
+
+            if ($isLateIn && $isEarlyOut) {
+                return 'Tidak Konsisten';
+            } elseif (!$isLateIn && $isEarlyOut) {
+                return 'Pulang Cepat';
+            } elseif ($isLateIn && !$isEarlyOut) {
+                return 'Terlambat';
+            } else {
+                return 'Hadir';
+            }
+        }
+
+        // Default jika tidak ada jam kerja
+        return 'Hadir';
+    }
+
+    /**
+     * Determine status for history display
+     */
+    private function determineHistoryStatus($attendance)
+    {
+        // Check override request status first
+        if ($attendance->override_request) {
+            if ($attendance->override_status === 'pending') {
+                // If override is pending, show status with pending note
+                $baseStatus = $this->getBaseHistoryStatus($attendance);
+                return $baseStatus . ' (Menunggu Approval)';
+            } elseif ($attendance->override_status === 'rejected') {
+                // If override is rejected, show status with rejected note
+                $baseStatus = $this->getBaseHistoryStatus($attendance);
+                return $baseStatus . ' (Override Ditolak)';
+            }
+            // If approved, continue with normal status determination
+        }
+
+        // Get base status for all other cases
+        return $this->getBaseHistoryStatus($attendance);
     }
 
     /**
@@ -849,85 +1079,136 @@ class EmployeeController extends Controller
     {
         $request->validate([
             'month' => 'sometimes|integer|min:1|max:12',
-            'year' => 'sometimes|integer|min:2020|max:2030',
+            'year' => 'sometimes|integer|min:2020|max:2100',
         ]);
 
         try {
             $karyawan = $request->user();
+            if (!$karyawan) {
+                return $this->errorResponse('Unauthenticated', null, 401);
+            }
+            
             $month = $request->month ?? Carbon::now()->month;
             $year = $request->year ?? Carbon::now()->year;
 
             $startDate = Carbon::create($year, $month, 1)->startOfMonth();
             $endDate = Carbon::create($year, $month, 1)->endOfMonth();
+            
+            // Don't count future dates
+            if ($endDate->isFuture()) {
+                $endDate = Carbon::today();
+            }
 
             $attendances = Absensi::with('jamKerja')
                 ->where('id_karyawan', $karyawan->id_karyawan)
                 ->whereBetween('tanggal_absen', [$startDate->toDateString(), $endDate->toDateString()])
                 ->get();
 
-            $totalDays = $attendances->count();
-            $presentDays = $attendances->whereNotNull('jam_masuk')->count();
-            $completeDays = $attendances->whereNotNull('jam_masuk')->whereNotNull('jam_keluar')->count();
-            $lateDays = 0;
-
-            // Calculate late days based on jam kerja settings with tolerance
-            foreach ($attendances as $attendance) {
-                if ($attendance->jam_masuk) {
-                    $checkInTime = Carbon::parse($attendance->tanggal_absen . ' ' . $attendance->jam_masuk);
-                    $standardTimeString = $attendance->jamKerja ? $attendance->jamKerja->jam_masuk_normal : '08:00:00';
-                    $standardTime = Carbon::parse($attendance->tanggal_absen . ' ' . $standardTimeString);
-
-                    // Add tolerance if available
-                    $toleransi = $attendance->jamKerja ? $attendance->jamKerja->toleransi_keterlambatan : 0;
-                    $standardTime->addMinutes($toleransi);
-
-                    if ($checkInTime->gt($standardTime)) {
-                        $lateDays++;
-                    }
-                }
-            }
-
-            // Calculate total work hours
+            // Statistics counters
+            $stats = [
+                'hadir' => 0,
+                'terlambat' => 0,
+                'lembur' => 0,
+                'tidak_hadir' => 0,
+                'libur' => 0,
+                'izin' => 0,
+                'sakit' => 0,
+                'cuti' => 0,
+            ];
+            
             $totalWorkMinutes = 0;
+            $completeDays = 0;
+
+            // Process each attendance record
             foreach ($attendances as $attendance) {
+                $status = $this->determineHistoryStatus($attendance);
+                
+                // Count by status
+                $statusLower = strtolower($status);
+                if ($statusLower === 'hadir') {
+                    $stats['hadir']++;
+                } elseif ($statusLower === 'terlambat') {
+                    $stats['terlambat']++;
+                } elseif ($statusLower === 'lembur') {
+                    $stats['lembur']++;
+                } elseif ($statusLower === 'tidak hadir') {
+                    $stats['tidak_hadir']++;
+                } elseif ($statusLower === 'libur') {
+                    $stats['libur']++;
+                } elseif ($statusLower === 'izin') {
+                    $stats['izin']++;
+                } elseif ($statusLower === 'sakit') {
+                    $stats['sakit']++;
+                } elseif ($statusLower === 'cuti') {
+                    $stats['cuti']++;
+                }
+                
+                // Calculate work hours
                 if ($attendance->jam_masuk && $attendance->jam_keluar) {
                     $checkIn = Carbon::parse($attendance->tanggal_absen . ' ' . $attendance->jam_masuk);
                     $checkOut = Carbon::parse($attendance->tanggal_absen . ' ' . $attendance->jam_keluar);
                     $totalWorkMinutes += $checkIn->diffInMinutes($checkOut);
+                    $completeDays++;
                 }
             }
 
             $totalWorkHours = floor($totalWorkMinutes / 60);
-            $averageWorkHours = $completeDays > 0 ? round($totalWorkHours / $completeDays, 2) : 0;
+            $totalWorkMinutesRemainder = $totalWorkMinutes % 60;
+            $averageWorkHours = $completeDays > 0 ? round($totalWorkMinutes / $completeDays / 60, 2) : 0;
+
+            // Count working days (exclude weekends and holidays)
+            $workingDays = 0;
+            $currentDate = $startDate->copy();
+            
+            while ($currentDate <= $endDate) {
+                $isWeekend = $currentDate->isWeekend();
+                $isHoliday = \App\Models\JadwalPengecualian::isHoliday($currentDate->toDateString());
+                
+                if (!$isWeekend && !$isHoliday) {
+                    $workingDays++;
+                }
+                
+                $currentDate->addDay();
+            }
+            
+            // Calculate attendance percentage (only for working days)
+            $presentDays = $stats['hadir'] + $stats['terlambat'];
+            $attendancePercentage = $workingDays > 0 ? round(($presentDays / $workingDays) * 100, 2) : 0;
 
             $responseData = [
                 'period' => [
                     'month' => $month,
                     'year' => $year,
-                    'month_name' => $startDate->format('F'),
+                    'month_name' => Carbon::create($year, $month, 1)->locale('id')->monthName,
+                    'start_date' => $startDate->toDateString(),
+                    'end_date' => $endDate->toDateString(),
                 ],
                 'statistics' => [
-                    'total_attendance_days' => $totalDays,
-                    'present_days' => $presentDays,
+                    'total_records' => $attendances->count(),
+                    'hadir' => $stats['hadir'],
+                    'terlambat' => $stats['terlambat'],
+                    'lembur' => $stats['lembur'],
+                    'tidak_hadir' => $stats['tidak_hadir'],
+                    'libur' => $stats['libur'],
+                    'izin' => $stats['izin'],
+                    'sakit' => $stats['sakit'],
+                    'cuti' => $stats['cuti'],
                     'complete_days' => $completeDays,
-                    'late_days' => $lateDays,
                     'total_work_hours' => $totalWorkHours,
+                    'total_work_minutes' => $totalWorkMinutesRemainder,
+                    'total_work_time_formatted' => sprintf('%d jam %d menit', $totalWorkHours, $totalWorkMinutesRemainder),
                     'average_work_hours_per_day' => $averageWorkHours,
                 ],
                 'attendance_rate' => [
-                    'working_days_in_month' => $endDate->diffInDaysFiltered(function (Carbon $date) {
-                        return $date->isWeekday();
-                    }, $startDate),
-                    'attendance_percentage' => $endDate->diffInDaysFiltered(function (Carbon $date) {
-                        return $date->isWeekday();
-                    }, $startDate) > 0 ? round(($presentDays / $endDate->diffInDaysFiltered(function (Carbon $date) {
-                        return $date->isWeekday();
-                    }, $startDate)) * 100, 2) : 0,
+                    'working_days_in_month' => $workingDays,
+                    'present_days' => $presentDays,
+                    'attendance_percentage' => $attendancePercentage,
                 ]
             ];
 
             return $this->jsonResponse($responseData, 'Attendance summary retrieved successfully');
         } catch (\Exception $e) {
+            Log::error('Error in getAttendanceSummary: ' . $e->getMessage());
             return $this->errorResponse('Failed to retrieve attendance summary', $e->getMessage(), 500);
         }
     }
@@ -1021,10 +1302,32 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Determine status based on attendance record
+     * Get base status without override considerations
      */
-    private function determineStatus($absen)
+    private function getBaseStatus($absen)
     {
+        // Check if weekend or holiday
+        $tanggalAbsen = Carbon::parse($absen->tanggal_absen);
+        if ($tanggalAbsen->isWeekend()) {
+            if (!$absen->jam_masuk) {
+                return 'libur';
+            }
+            if ($absen->is_lembur) {
+                return 'lembur';
+            }
+        }
+        
+        // Check holiday from jadwal_pengecualian
+        $isHoliday = \App\Models\JadwalPengecualian::isHoliday($absen->tanggal_absen);
+        if ($isHoliday) {
+            if (!$absen->jam_masuk) {
+                return 'libur';
+            }
+            if ($absen->is_lembur) {
+                return 'lembur';
+            }
+        }
+
         // If is_lembur is true, set status to lembur
         if ($absen->is_lembur) {
             return 'lembur';
@@ -1087,6 +1390,154 @@ class EmployeeController extends Controller
 
         // Default jika tidak ada jam kerja
         return 'hadir';
+    }
+
+    /**
+     * Determine status based on attendance record
+     */
+    private function determineStatus($absen)
+    {
+        // Check override request status first
+        if ($absen->override_request) {
+            if ($absen->override_status === 'pending') {
+                $baseStatus = $this->getBaseStatus($absen);
+                return $baseStatus . ' (menunggu approval)';
+            } elseif ($absen->override_status === 'rejected') {
+                $baseStatus = $this->getBaseStatus($absen);
+                return $baseStatus . ' (override ditolak)';
+            }
+            // If approved, continue with normal status determination
+        }
+
+        // Get base status for all other cases
+        return $this->getBaseStatus($absen);
+    }
+
+    /**
+     * API method untuk request override ke Manager SDM
+     * Digunakan ketika karyawan terlambat check-in atau pulang cepat
+     */
+    public function apiRequestOverride(Request $request): JsonResponse
+    {
+        // Log incoming request dengan detail lengkap
+        Log::info('Override request received - FULL DEBUG', [
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
+            'all_input' => $request->all(),
+        ]);
+
+        $request->validate([
+            'id_absensi' => 'required|exists:absensi,id_absensi',
+            'reason' => 'required|string|min:10|max:500',
+            'override_type' => 'required|string|in:late_check_in,early_check_out',
+        ]);
+
+        try {
+            $karyawan = Auth::guard('sanctum')->user();
+            if (!$karyawan) {
+                Log::warning('Override request without authentication');
+                return $this->errorResponse('Unauthenticated', null, 401);
+            }
+
+            $absensi = Absensi::findOrFail($request->id_absensi);
+
+            // Verify this absensi belongs to the authenticated employee
+            if ($absensi->id_karyawan !== $karyawan->id_karyawan) {
+                return $this->errorResponse('Anda tidak memiliki akses ke data absensi ini.', null, 403);
+            }
+
+            Log::info('Processing override request', [
+                'karyawan_id' => $karyawan->id_karyawan,
+                'absensi_id' => $absensi->id_absensi,
+                'tanggal_absen' => $absensi->tanggal_absen,
+                'override_type' => $request->override_type,
+                'reason_length' => strlen($request->reason),
+            ]);
+
+            // Check if already has pending override request
+            if ($absensi->override_request && $absensi->override_status === 'pending') {
+                Log::warning('Duplicate override request attempt', [
+                    'absensi_id' => $absensi->id_absensi,
+                    'karyawan_id' => $karyawan->id_karyawan,
+                ]);
+                return $this->errorResponse('Anda sudah memiliki permintaan override yang sedang diproses untuk tanggal ini.', null, 400);
+            }
+
+            if ($absensi->override_request && $absensi->override_status === 'approved') {
+                Log::warning('Override request for already approved attendance', [
+                    'absensi_id' => $absensi->id_absensi,
+                    'karyawan_id' => $karyawan->id_karyawan,
+                ]);
+                return $this->errorResponse('Permintaan override untuk tanggal ini sudah disetujui sebelumnya.', null, 400);
+            }
+
+            // Validate override type matches the actual problem
+            $overrideType = $request->override_type;
+            $overrideTypeText = $overrideType === 'late_check_in' ? 'Terlambat Check In' : 'Pulang Cepat';
+
+            // Update attendance with override request
+            $absensi->update([
+                'override_request' => true,
+                'override_reason' => "[{$overrideTypeText}] " . $request->reason,
+                'override_status' => 'pending',
+                'override_requested_at' => now(),
+                'override_type' => $overrideType,
+            ]);
+
+            Log::info('Override request created successfully', [
+                'absensi_id' => $absensi->id_absensi,
+                'karyawan_id' => $karyawan->id_karyawan,
+                'override_type' => $overrideType,
+            ]);
+
+            return $this->jsonResponse([
+                'absensi_id' => $absensi->id_absensi,
+                'status' => 'pending',
+                'override_type' => $overrideType,
+                'message' => 'Permintaan override berhasil dikirim ke Manager SDM',
+            ], 'Permintaan override telah dikirim. Menunggu persetujuan Manager SDM.', true, 201);
+
+        } catch (\Exception $e) {
+            Log::error('Error creating override request', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return $this->errorResponse('Terjadi kesalahan saat membuat permintaan override.', $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * DEBUG ENDPOINT - Test override request untuk melihat data yang diterima
+     * Endpoint ini akan dihapus setelah debugging selesai
+     */
+    public function debugOverrideRequest(Request $request): JsonResponse
+    {
+        Log::info('DEBUG Override Request', [
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
+            'headers' => $request->headers->all(),
+            'all_input' => $request->all(),
+            'json_input' => $request->json()->all(),
+            'raw_content' => $request->getContent(),
+        ]);
+
+        return $this->jsonResponse([
+            'received_data' => [
+                'method' => $request->method(),
+                'content_type' => $request->header('Content-Type'),
+                'all_input' => $request->all(),
+                'json_input' => $request->json()->all(),
+                'raw_content' => $request->getContent(),
+                'has_id_absensi' => $request->has('id_absensi'),
+                'has_reason' => $request->has('reason'),
+                'id_absensi_value' => $request->input('id_absensi'),
+                'reason_value' => $request->input('reason'),
+            ],
+            'authentication' => [
+                'is_authenticated' => $request->user() !== null,
+                'user_id' => $request->user()?->id_karyawan,
+            ]
+        ], 'Debug data received successfully');
     }
 
 

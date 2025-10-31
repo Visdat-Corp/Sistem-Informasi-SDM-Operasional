@@ -336,13 +336,22 @@
 
         document.getElementById('saveBtn').addEventListener('click', function() {
             const formData = new FormData(document.getElementById('editForm'));
+            
+            // Convert date from DD-MM-YYYY to YYYY-MM-DD
+            let tanggal = formData.get('tanggal');
+            const dateParts = tanggal.split('-');
+            if (dateParts.length === 3) {
+                // Convert from DD-MM-YYYY to YYYY-MM-DD
+                tanggal = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+            }
+            
             const data = {
                 id_karyawan: formData.get('id_karyawan'),
-                tanggal: formData.get('tanggal'),
+                tanggal: tanggal,
                 status: formData.get('status')
             };
 
-            fetch('/admin/laporan/update-status', {
+            fetch('/laporan/update-status', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

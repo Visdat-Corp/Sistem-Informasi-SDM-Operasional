@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 
 class LokasiKerja extends Model
 {
@@ -25,13 +26,48 @@ class LokasiKerja extends Model
      */
     public function isWithinRadius($lat, $lng)
     {
+        // Validate input coordinates
+        if ($lat === null || $lng === null) {
+            return false;
+        }
+        
+        // Check if location has coordinates and radius set
         if (!$this->latitude || !$this->longitude || !$this->radius) {
             return false; // If location not set, consider not within
         }
 
-        $distance = $this->calculateDistance($this->latitude, $this->longitude, $lat, $lng);
+        try {
+            $distance = $this->calculateDistance($this->latitude, $this->longitude, $lat, $lng);
+            return $distance <= $this->radius;
+        } catch (\Exception $e) {
+            Log::error('Error calculating distance: ' . $e->getMessage());
+            return false;
+        }
+    }
 
-        return $distance <= $this->radius;
+    /**
+     * Get distance from this location to given coordinates
+     *
+     * @param float $lat
+     * @param float $lng
+     * @return float Distance in meters
+     */
+    public function getDistanceFrom($lat, $lng)
+    {
+        if ($lat === null || $lng === null) {
+            return 0;
+        }
+        
+        if (!$this->latitude || !$this->longitude) {
+            return 0;
+        }
+
+        try {
+            return $this->calculateDistance($this->latitude, $this->longitude, $lat, $lng);
+        } catch (\Exception $e) {
+            Log::error('Error calculating distance: ' . $e->getMessage());
+            return 0;
+        }
     }
 
     /**

@@ -113,6 +113,9 @@
                             Posisi</th>
                         <th scope="col"
                             class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Lokasi Kerja</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Status</th>
                         <th scope="col"
                             class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi
@@ -134,6 +137,8 @@
                                 {{ $karyawan->departemen->nama_departemen ?? 'N/A' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                 {{ $karyawan->posisi->nama_posisi ?? 'N/A' }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ $karyawan->lokasiKerja->lokasi_kerja ?? 'N/A' }}</td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <span
                                     class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full {{ $karyawan->status == 'aktif' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' }}">
@@ -147,7 +152,9 @@
                                     data-username="{{ $karyawan->username_karyawan }}"
                                     data-email="{{ $karyawan->email_karyawan }}"
                                     data-departemen="{{ $karyawan->id_departemen }}"
-                                    data-posisi="{{ $karyawan->id_posisi }}" data-status="{{ $karyawan->status }}">
+                                    data-posisi="{{ $karyawan->id_posisi }}" 
+                                    data-lokasi="{{ $karyawan->id_lokasi_kerja }}"
+                                    data-status="{{ $karyawan->status }}">
                                     <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none"
                                         viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round"
@@ -167,7 +174,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="px-6 py-4 text-center text-gray-500">Tidak ada data karyawan.
+                            <td colspan="9" class="px-6 py-4 text-center text-gray-500">Tidak ada data karyawan.
                             </td>
                         </tr>
                     @endforelse
@@ -244,6 +251,17 @@
                             <select name="id_posisi" id="posisiSelect"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 hidden">
                                 <option value="">Pilih Posisi</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="lokasiTambah" class="block text-sm font-medium text-gray-700 mb-1">Lokasi Kerja</label>
+                            <select name="id_lokasi_kerja" id="lokasiTambah"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                                <option value="">Pilih Lokasi Kerja</option>
+                                @foreach ($lokasis as $lokasi)
+                                    <option value="{{ $lokasi->id_lokasi }}">
+                                        {{ $lokasi->lokasi_kerja }}</option>
+                                @endforeach
                             </select>
                         </div>
                         <div>
@@ -336,6 +354,17 @@
                                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 hidden"
                                 required>
                                 <option value="">Pilih Posisi</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="editLokasi" class="block text-sm font-medium text-gray-700 mb-1">Lokasi Kerja</label>
+                            <select name="id_lokasi_kerja" id="editLokasi"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                                <option value="">Pilih Lokasi Kerja</option>
+                                @foreach ($lokasis as $lokasi)
+                                    <option value="{{ $lokasi->id_lokasi }}">
+                                        {{ $lokasi->lokasi_kerja }}</option>
+                                @endforeach
                             </select>
                         </div>
                         <div>
@@ -439,9 +468,16 @@
             btn.addEventListener('click', function() {
                 const departemen = this.getAttribute('data-departemen');
                 const posisi = this.getAttribute('data-posisi');
+                const lokasi = this.getAttribute('data-lokasi');
                 const posisiSelect = document.getElementById('editPosisi');
+                const lokasiSelect = document.getElementById('editLokasi');
+                
                 if (departemen) {
                     loadPositions(departemen, posisiSelect, posisi);
+                }
+                
+                if (lokasiSelect && lokasi) {
+                    lokasiSelect.value = lokasi;
                 }
             });
         });

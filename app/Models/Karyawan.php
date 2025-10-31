@@ -11,7 +11,7 @@ class Karyawan extends Authenticatable
 {
     use HasApiTokens;
     protected $table = 'karyawan';
-    protected $fillable = ['id_departemen', 'id_posisi', 'nama_karyawan', 'username_karyawan', 'email_karyawan', 'password_karyawan', 'status'];
+    protected $fillable = ['id_departemen', 'id_posisi', 'id_lokasi_kerja', 'nama_karyawan', 'username_karyawan', 'email_karyawan', 'password_karyawan', 'status'];
     protected $primaryKey = 'id_karyawan';
     protected $hidden = ['password_karyawan'];
     
@@ -41,6 +41,11 @@ class Karyawan extends Authenticatable
     public function posisi()
     {
         return $this->belongsTo(Posisi::class, 'id_posisi');
+    }
+
+    public function lokasiKerja()
+    {
+        return $this->belongsTo(LokasiKerja::class, 'id_lokasi_kerja', 'id_lokasi');
     }
 
     public function absensis()

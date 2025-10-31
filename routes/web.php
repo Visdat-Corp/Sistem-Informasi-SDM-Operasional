@@ -32,21 +32,25 @@ Route::middleware('auth:admin')->group(function () {
     Route::put('/kelola-lokasi/{id}', [AdminController::class, 'updateLokasi'])->name('update-lokasi');
     Route::delete('/kelola-lokasi/{id}', [AdminController::class, 'destroyLokasi'])->name('destroy-lokasi');
 
+    Route::get('/kelola-jadwal-pengecualian', [AdminController::class, 'indexJadwalPengecualian'])->name('kelola-jadwal-pengecualian');
+    Route::post('/kelola-jadwal-pengecualian', [AdminController::class, 'storeJadwalPengecualian'])->name('store-jadwal-pengecualian');
+    Route::put('/kelola-jadwal-pengecualian/{id}', [AdminController::class, 'updateJadwalPengecualian'])->name('update-jadwal-pengecualian');
+    Route::delete('/kelola-jadwal-pengecualian/{id}', [AdminController::class, 'destroyJadwalPengecualian'])->name('destroy-jadwal-pengecualian');
+
     Route::get('/data-absensi', [AdminController::class, 'indexAbsensi'])->name('data-absensi');
     Route::put('/data-absensi/{id_absensi}/status', [AdminController::class, 'updateAbsensiStatus'])->name('update-absensi-status');
+    Route::post('/data-absensi/{id}/approve-override', [AdminController::class, 'approveOverrideRequest'])->name('approve-override');
+    Route::post('/data-absensi/{id}/reject-override', [AdminController::class, 'rejectOverrideRequest'])->name('reject-override');
+    
+    Route::get('/override-requests', [AdminController::class, 'indexOverrideRequests'])->name('override-requests');
+    
     Route::get('/laporan', [AdminController::class, 'indexLaporan'])->name('laporan');
+    Route::post('/laporan/update-status', [AdminController::class, 'updateLaporanStatus'])->name('laporan.update-status');
     Route::get('/laporan/export', [AdminController::class, 'exportLaporan'])->name('laporan.export');
     Route::get('/laporan/export-lembur', [AdminController::class, 'exportLaporanLembur'])->name('laporan.export-lembur');
     Route::get('/pengaturan', [AdminController::class, 'indexPengaturan'])->name('pengaturan');
     Route::post('/pengaturan', [AdminController::class, 'updatePengaturan'])->name('update-pengaturan');
 });
 
-use App\Http\Controllers\EmployeeController;
 
-Route::post('/karyawan/login', [EmployeeController::class, 'login']);
-
-Route::middleware('auth:karyawan')->group(function () {
-    Route::post('/check-in', [EmployeeController::class, 'checkIn']);
-    Route::post('/check-out', [EmployeeController::class, 'checkOut']);
-});
 
